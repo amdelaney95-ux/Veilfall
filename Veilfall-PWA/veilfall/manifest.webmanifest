@@ -1,0 +1,29 @@
+{
+  "name": "Veilfall — An Isekai Chronicle",
+  "short_name": "Veilfall",
+  "description": "A pixel-art isekai RPG. Plays fully offline once installed.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0c1e",
+  "theme_color": "#0b0c1e",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
