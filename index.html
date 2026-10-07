@@ -518,35 +518,108 @@ p{ line-height:1.6; margin:0 0 0.9rem; color:var(--ink-soft); }
 .bestiary-cell.locked .bestiary-name{ color:var(--ink-soft); opacity:0.6; letter-spacing:0.14em; }
 .bestiary-count{ font-family:var(--font-mono); font-size:0.68rem; color:var(--ink-soft); }
 
-/* ---------- the road choice ----------
-   Three big targets rather than a row of buttons: this is the one decision in
-   a leg, and it should look like one. The tags carry the whole weight of the
-   screen, so they are what gets the colour — costs in ember, gains in moss,
-   and the shape of the fighting in plain ink. */
+/* ---------- the path screens ----------
+   Both choices on the way into a leg — which region, then which road through
+   it — are choices of PLACE, so each card is drawn over its own region's
+   plate: dark under the words, clear over the picture. The road cards also
+   carry a difficulty colour, green / yellow / red, so the three can be told
+   apart before a word is read; the badge says it in words as well, because
+   colour alone is no signal at all to a colour-blind player. The tags keep
+   their meaning — costs in red, gains in green, the shape of the fighting in
+   plain ink — restated in lighter values because they now sit on a dark
+   ground. */
 .road-list{ display:flex; flex-direction:column; gap:0.7rem; margin:0.9rem 0; }
 .road{
-  display:flex; flex-direction:column; gap:0.35rem; width:100%; text-align:left;
-  font-family:var(--font-body); cursor:pointer;
-  background:var(--parchment2); color:var(--ink);
-  border:1px solid var(--parchment-edge); border-top-width:3px; border-radius:3px;
-  padding:0.8rem 0.95rem;
-  transition:transform .08s ease, background .15s ease, box-shadow .15s ease;
+  --road-accent:var(--gold);
+  --road-glow:transparent;
+  /* The plates are 380x214 and drawn for 2x, like every other picture on the
+     screen — the scene band directly above these cards included. A different
+     scale here would put two pixel sizes on one screen. */
+  --art-scale:2;
+  /* Where in the card a view's focal point lands: well right of the words.
+     --art-max is how far right the plate's left edge may travel; that edge is
+     feathered, and it can only ever sit under the dark side of the scrim. */
+  --art-x:80%; --art-y:50%; --art-max:60%;
+  position:relative; isolation:isolate; overflow:hidden;
+  display:flex; flex-direction:column; gap:0.35rem; width:100%; min-height:7.6rem; text-align:left;
+  font-family:var(--font-body); color:var(--parchment); cursor:pointer;
+  background:var(--void);
+  border:1px solid var(--parchment-edge); border-left:6px solid var(--road-accent); border-radius:3px;
+  padding:0.8rem 0.95rem 0.85rem 1rem;
+  transition:transform .08s ease, box-shadow .15s ease;
 }
-.road:hover{ background:var(--parchment); transform:translateY(-1px);
-  box-shadow:0 4px 14px -6px rgba(43,32,19,0.5); }
+.road-art{ position:absolute; inset:0; z-index:-2; overflow:hidden; pointer-events:none; }
+/* The whole plate at 2x, slid so the view's focal point sits at --art-x/--art-y,
+   then clamped: it always reaches the card's right edge, top and bottom, so a
+   view near the edge of the picture stops at the edge rather than showing the
+   card behind it. At 2x the plate is barely wider than the card, so without
+   the room --art-max gives it every card would show the same right-hand
+   strip of its plate whatever view it asked for. */
+.road-plate{
+  position:absolute;
+  width:calc(380px * var(--art-scale)); height:calc(214px * var(--art-scale));
+  left:clamp(calc(100% - 380px * var(--art-scale)), calc(var(--art-x) - var(--fx) * var(--art-scale) * 1px), var(--art-max));
+  top:clamp(calc(100% - 214px * var(--art-scale)), calc(var(--art-y) - var(--fy) * var(--art-scale) * 1px), 0px);
+  background-size:100% 100%; background-repeat:no-repeat; image-rendering:pixelated;
+  -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 7rem);
+          mask-image:linear-gradient(90deg, transparent 0, #000 7rem);
+}
+.road::before{
+  content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:
+    linear-gradient(90deg, var(--road-glow) 0%, transparent 34%),
+    linear-gradient(90deg, rgba(11,12,30,0.94) 0%, rgba(11,12,30,0.9) 48%, rgba(11,12,30,0.42) 68%, rgba(11,12,30,0.06) 90%);
+  transition:opacity .15s ease;
+}
+.road:hover{ transform:translateY(-1px); box-shadow:0 6px 18px -8px rgba(11,12,30,0.85); }
+.road:hover::before{ opacity:0.92; }
 .road:focus-visible{ outline:2px solid var(--gold-bright); outline-offset:2px; }
-.road.dangerous{ border-top-color:var(--ember); }
-.road.sideways{ border-top-color:var(--gold); }
-.road-name{ font-family:var(--font-display); font-size:1.05rem; font-weight:600; }
-.road-blurb{ font-size:0.86rem; line-height:1.45; color:var(--ink-soft); }
+.road.risk-easy{   --road-accent:#5f9e4e; --road-glow:rgba(95,158,78,0.26); }
+.road.risk-medium{ --road-accent:#dcb33a; --road-glow:rgba(220,179,58,0.22); }
+.road.risk-hard{   --road-accent:#c0432b; --road-glow:rgba(192,67,43,0.3); }
+/* The words keep to the dark side of the scrim; the picture gets the rest. */
+.road-head, .road > .road-name, .road-blurb, .road-tags{ max-width:58%; }
+.road-head{ display:flex; align-items:center; flex-wrap:wrap; gap:0.3rem 0.6rem; }
+.road-risk{
+  font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.14em;
+  text-transform:uppercase; line-height:1.5; padding:0.12em 0.6em; border-radius:2px;
+  background:var(--road-accent); color:#17110a;
+}
+.road.risk-hard .road-risk{ color:#fff7ee; }
+.road-name{ font-family:var(--font-display); font-size:1.08rem; font-weight:600; color:var(--parchment);
+  text-shadow:0 1px 2px rgba(0,0,0,0.65); }
+.road-blurb{ font-size:0.86rem; line-height:1.45; color:rgba(239,230,209,0.88); text-shadow:0 1px 2px rgba(0,0,0,0.55); }
 .road-tags{ display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.15rem; }
 .road-tag{
   font-family:var(--font-mono); font-size:0.63rem; letter-spacing:0.05em;
   padding:0.16em 0.45em; border-radius:2px; border:1px solid currentColor; line-height:1.6;
+  background:rgba(11,12,30,0.6);
 }
-.road-tag.bad{ color:var(--ember); }
-.road-tag.good{ color:var(--moss); }
-.road-tag.flat{ color:var(--ink-soft); }
+.road-tag.bad{ color:#f2967e; }
+.road-tag.good{ color:#a8d291; }
+.road-tag.flat{ color:rgba(239,230,209,0.82); }
+/* A region card has no difficulty — the two regions on offer are equally
+   hard — so it keeps the codex gold, sits its words at the foot of the card
+   and spends the extra height on the picture. */
+.road.region-pick{ min-height:8.8rem; justify-content:flex-end; }
+.road.region-pick .road-name{ font-size:1.22rem; }
+.road.region-pick .road-blurb{ font-style:italic; }
+@media(max-width:520px){
+  /* Narrow, the words need the full width, so the picture becomes a band
+     across the top of the card and the scrim fades in underneath it. */
+  .road{ --art-x:50%; --art-y:2.2rem; --art-max:0px; padding-top:4.7rem; min-height:0; }
+  .road-plate{ -webkit-mask-image:none; mask-image:none; }
+  .road::before{ background:linear-gradient(180deg, rgba(11,12,30,0.08) 0%, rgba(11,12,30,0.18) 2.8rem,
+    rgba(11,12,30,0.88) 5.4rem, rgba(11,12,30,0.94) 100%); }
+  .road-head, .road > .road-name, .road-blurb, .road-tags{ max-width:none; }
+  /* The badge rides on the picture, where it is the first thing seen. */
+  .road-risk{ position:absolute; top:0.7rem; left:0.85rem; box-shadow:0 1px 3px rgba(0,0,0,0.5); }
+  .road.region-pick{ min-height:0; }
+}
+@media(prefers-reduced-motion:reduce){
+  .road, .road::before{ transition:none; }
+  .road:hover{ transform:none; }
+}
 
 /* ---------- bonds ---------- */
 .bond-line{
@@ -1085,6 +1158,21 @@ const ROUTE_NAMES = {
     bold: ['The Open Run', 'Nothing at all between you and the sky, and the sky is paying attention.'],
     long: ['The Herder’s Track', 'It follows the water, and so does everything else. There are shepherds’ huts.'],
     short:['The Bluff Path', 'High and quick, and it flushes whatever it is that nests up there.']}
+};
+
+// Where to look in each region's plate, in plate pixels (380x214, horizon at
+// y=130). The path screens draw every choice over its own place: one view for
+// the region's card, and one for each of its roads chosen to match the road's
+// name — the Thornway looks into the trunks, the Woodcutter's Circuit down at
+// the clearing where the camps are, the Open Run straight up at the sky. A
+// view is the point the card centres on; the plate is clamped so it always
+// fills the card, which is why a view can sit near an edge safely.
+const SCENE_VIEWS = {
+  wilderness:{ region:[270,100], bold:[330,105], long:[300,172], short:[200,100] },
+  desert:    { region:[125,108], bold:[290,188], long:[240,112], short:[175,160] },
+  volcano:   { region:[250, 95], bold:[ 85, 70], long:[190,180], short:[322,112] },
+  swamp:     { region:[185, 92], bold:[240,155], long:[230,196], short:[320,128] },
+  plains:    { region:[200, 95], bold:[240, 38], long:[200,118], short:[330, 95] }
 };
 
 function routeDef(id){ return ROUTE_BY_ID[id] || null; }
@@ -4849,10 +4937,14 @@ function renderRegionSelect(){
   <div class="eyebrow">Leg ${legNum===1?'I':'II'} of III</div>
   <h2 class="section-title">Choose your road</h2>
   <p>Two paths lie ahead. Each leads through different dangers — and different fortunes.</p>
-  <div class="btn-row">
+  <div class="road-list">
     ${options.map(rid=>{
       const r = REGIONS[rid];
-      return `<button class="btn btn-wide" onclick="selectRegion('${rid}')"><strong>${r.name}</strong><small>${r.blurb}</small></button>`;
+      return `<button class="road region-pick" onclick="selectRegion('${rid}')">
+        ${sceneArtHtml(rid, (SCENE_VIEWS[rid] || {}).region)}
+        <span class="road-name">${r.name}</span>
+        <span class="road-blurb">${r.blurb}</span>
+      </button>`;
     }).join('')}
   </div>`;
 }
@@ -4894,6 +4986,29 @@ function routeTags(road){
   else if(road.dropMult > 1.1) tags.push({label:'slightly better drops', tone:'good'});
   return tags;
 }
+// How hard a road is to walk, for the green / yellow / red on its card. It is
+// derived from the same tags the card prints — no costs is easy, one is
+// medium, more is hard — so the colour cannot drift from the numbers any more
+// than a tag can. It rates the walking, which is what a player sees and feels;
+// it is NOT the win rate. The roads measure within about three points of each
+// other at the end of a run, because the hard road pays for itself (see ROUTES).
+const ROUTE_RISK_RANK = {easy:0, medium:1, hard:2};
+const ROUTE_RISK_LABEL = {easy:'Easy', medium:'Medium', hard:'Hard'};
+function routeRisk(road){
+  const costs = routeTags(road).filter(g=>g.tone==='bad').length;
+  return costs === 0 ? 'easy' : costs === 1 ? 'medium' : 'hard';
+}
+// The picture behind a path card: a region's plate at 2x, centred on `view`.
+// Falls back to the stand-in gradient when the plate is missing, the same way
+// the scene band does, so a copy of the file without assets/ still has cards
+// that look like places rather than empty boxes.
+function sceneArtHtml(key, view){
+  const rel = ASSET_MANIFEST.backgrounds[key];
+  const url = rel ? assetUrl(rel) : null;
+  const image = (url && !ASSET_FAILED[url]) ? `url('${url}')` : sceneGradient(key);
+  const fx = view ? view[0] : 190, fy = view ? view[1] : 107;
+  return `<span class="road-art" aria-hidden="true"><span class="road-plate" style="--fx:${fx};--fy:${fy};background-image:${image}"></span></span>`;
+}
 function chooseRoute(id){
   const t = state.travel;
   if(!t || !routeDef(id)) return;
@@ -4906,12 +5021,18 @@ function chooseRoute(id){
 function renderRouteChoice(){
   const t = state.travel;
   const region = REGIONS[t.regionId];
-  const cards = ROUTES.map(road=>{
+  const views = SCENE_VIEWS[t.regionId] || {};
+  // Easiest first, so the three read top to bottom as green, yellow, red.
+  // sort() is stable, so roads of equal difficulty keep the ROUTES order.
+  const roads = ROUTES.slice().sort((a,b)=>ROUTE_RISK_RANK[routeRisk(a)] - ROUTE_RISK_RANK[routeRisk(b)]);
+  const cards = roads.map(road=>{
     const [name, blurb] = ROUTE_NAMES[t.regionId][road.id];
+    const risk = routeRisk(road);
     const tags = routeTags(road).map(g=>`<span class="road-tag ${g.tone}">${g.label}</span>`).join('');
     return `
-    <button class="road ${road.kind}" onclick="chooseRoute('${road.id}')">
-      <span class="road-name">${name}</span>
+    <button class="road ${road.kind} risk-${risk}" onclick="chooseRoute('${road.id}')">
+      ${sceneArtHtml(t.regionId, views[road.id])}
+      <span class="road-head"><span class="road-risk">${ROUTE_RISK_LABEL[risk]}</span><span class="road-name">${name}</span></span>
       <span class="road-blurb">${blurb}</span>
       <span class="road-tags">${tags}</span>
     </button>`;
