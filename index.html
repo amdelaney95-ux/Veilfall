@@ -182,6 +182,27 @@ p{ line-height:1.6; margin:0 0 0.9rem; color:var(--ink-soft); }
   border:1px solid var(--gold); border-radius:3px; padding:0.5rem 0.8rem; margin:0.7rem 0 0.4rem;
 }
 .skill-btn small{ color:var(--arcane); }
+/* ---------- rules text vs flavour ----------
+   Two voices, never mixed: what a thing DOES is set in the mono rules face, in
+   the skill blue, with ◆ marking an ability firing; what a thing is LIKE is set
+   in the book face, in italics, in soft ink. Anything mechanical that used to be
+   written as prose now has a rules line beside it. */
+.rules{ font-family:var(--font-mono); color:var(--arcane); font-style:normal; }
+.rules.sub{ display:block; font-weight:700; margin-top:0.25rem; }
+.flavor, .fl{ font-family:var(--font-body); font-style:italic; font-weight:400; color:var(--ink-soft); }
+.skill-text{ display:block; }
+.skill-text .rules{ display:block; font-size:0.7rem; line-height:1.45; }
+.skill-text .flavor{ display:block; font-size:0.8rem; line-height:1.4; margin-top:0.18rem; }
+.shop-item .skill-text .rules{ font-size:0.74rem; }
+.shop-item .skill-text .flavor{ font-size:0.86rem; }
+.ab{ font-weight:700; color:var(--arcane); white-space:nowrap; }
+.ab::before{ content:'\25C6\00a0'; font-size:0.8em; }
+.log .fl{ font-size:0.86rem; }
+.effect{ display:block; margin-top:0.45rem; font-family:var(--font-mono); font-size:0.8rem; font-style:normal; color:var(--ink); }
+.flavor-line{ font-style:italic; margin-bottom:0.45rem; }
+.text-key{ font-size:0.84rem; }
+.text-key .rules{ font-size:0.76rem; font-weight:700; }
+.skill-btn small.opt-class{ color:var(--ink-soft); letter-spacing:0.06em; text-transform:uppercase; font-size:0.62rem; }
 
 /* Shop / lists */
 .shop-grid{ display:grid; grid-template-columns:1fr; gap:0.55rem; }
@@ -1104,16 +1125,20 @@ function heroLearnExtraSkill(charId, tier, classId){
   render();
 }
 
+// `flavor` is the Goddess talking; `effect` is the rule. They used to share one
+// sentence, so the two read as the same kind of statement.
 const BLESSINGS = [
-  {id:'favor', name:'Goddess’s Favor', desc:'Every victory teaches you more. +25% experience earned.'},
-  {id:'iron', name:'Iron Body', desc:'A sturdier vessel. +30% maximum HP for the whole party.'},
-  {id:'mana', name:'Mana Well', desc:'A deep reservoir of power. +30% maximum MP for the whole party.'},
-  {id:'golden', name:'Golden Touch', desc:'Fortune finds you. +50% gold from battles.'},
-  {id:'wind', name:'Swift Wind', desc:'The wind favors you. +4 Speed for the whole party.'},
-  {id:'berserk', name:'Berserker’s Blood', desc:'Power at a cost. +20% attack, -10% defense for the party.'},
-  {id:'guardian', name:'Guardian Angel', desc:'Once per journey, a killing blow instead leaves an ally at 1 HP.'},
-  {id:'lucky', name:'Lucky Star', desc:'Fate smiles often. +15% critical hit chance.'}
+  {id:'favor', name:'Goddess’s Favor', flavor:'Every victory teaches you more.', effect:'+25% experience earned.'},
+  {id:'iron', name:'Iron Body', flavor:'A sturdier vessel.', effect:'+30% maximum HP for the whole party.'},
+  {id:'mana', name:'Mana Well', flavor:'A deep reservoir of power.', effect:'+30% maximum MP for the whole party.'},
+  {id:'golden', name:'Golden Touch', flavor:'Fortune finds you.', effect:'+50% gold from battles.'},
+  {id:'wind', name:'Swift Wind', flavor:'The wind favors you.', effect:'+4 Speed for the whole party.'},
+  {id:'berserk', name:'Berserker’s Blood', flavor:'Power at a cost.', effect:'+20% attack, −10% defense for the party.'},
+  {id:'guardian', name:'Guardian Angel', flavor:'', effect:'Once per journey, a killing blow instead leaves an ally at 1 HP.'},
+  {id:'lucky', name:'Lucky Star', flavor:'Fate smiles often.', effect:'+15% critical hit chance.'}
 ];
+// The old one-line description, still there for anything that reads it.
+BLESSINGS.forEach(b => { b.desc = [b.flavor, b.effect].filter(Boolean).join(' '); });
 
 const REGIONS = {
   wilderness:{ name:'The Whispering Wilds', blurb:'Ancient trees crowd out the sun; things move between the trunks.',
@@ -1459,6 +1484,14 @@ function bondSaveAllowedHere(){
 function bondLabel(lvl){
   return lvl ? `Bond ${BOND_NUMERAL[lvl]} — ${BOND_TITLES[lvl]}` : 'No bond yet';
 }
+// What reaching a level newly grants, from the same multipliers the maths uses.
+function bondGainText(lvl){
+  const pct = m => `${Math.round((m - 1) * 100)}%`;
+  if(lvl===1) return `+${pct(BOND_ATK_MULT[1])} attack and magic`;
+  if(lvl===2) return `+${pct(BOND_HP_MULT[2])} maximum health`;
+  if(lvl===3) return `once a run, gets back up on the road at ${Math.round(BOND_SAVE_PCT*100)}% health`;
+  return '';
+}
 // Battles still to go before the next level, or null at the top.
 function bondToNext(c){
   const lvl = bondLevel(c);
@@ -1483,7 +1516,7 @@ function deepenBonds(){
       // Max HP is part of the bond from level II, so the derived stats have to
       // be recomputed the moment it changes rather than at the next level-up.
       if(BOND_HP_MULT[after] !== BOND_HP_MULT[before]) recalcDerived(c);
-      log(`✦ ${dispName(c)} has been through a great deal with you — ${bondLabel(after)}.`);
+      log(`${abName(bondLabel(after))} ${dispName(c)}: ${bondGainText(after)}. ${flavorText('They have been through a great deal with you.')}`);
     }
   });
 }
@@ -1551,6 +1584,8 @@ function recalcDerived(c){
 // loses roughly a third of their effectiveness and is never told why. It
 // matters most on the Hero, whose stat spread and skill picks are two
 // independent choices with no other connection between them.
+// (No longer drawn on its own: skillRulesText() prints the same scaling as the
+// start of every skill's rules line.)
 function skillScalingLabel(s){
   if(s.kind==='buffParty' || s.kind==='taunt') return 'no scaling';
   if(s.kind==='heal' || s.kind==='healAll' || s.kind==='revive'){
@@ -1998,9 +2033,80 @@ function statusMeta(s){
   const leftText = left==null ? '' : `${left} ${battles ? (left===1?'battle':'battles') : (left===1?'turn':'turns')} left`;
   return {tone, code, name:s.label, effect, left, leftText};
 }
+// A status in a few words, for rules lines: "DEF −45%", "skips a turn".
+function statusShort(s){
+  const pct = m => Math.round(Math.abs(1 - (m||1)) * 100);
+  if(s.kind==='dot') return `${Math.round((s.dmgPct||0)*100)}% max HP a turn`;
+  if(s.kind==='stun') return 'skips a turn';
+  if(s.stat) return `${STAT_ABBR[s.stat] || s.stat.toUpperCase()} ${(s.mult||1) >= 1 ? '+' : '−'}${pct(s.mult)}%`;
+  return s.label || '';
+}
+const turnsText = n => `${n} ${n===1 ? 'turn' : 'turns'}`;
+
+/* ---------- rules text vs flavour ----------
+   Playtesters could not tell a skill's flavour line from what it actually did.
+   "A choking cloud that helps the party evade harm" read as an evasion rule —
+   the game has no evasion; Smoke Bomb raises Defense. So every skill now has a
+   RULES line generated from its own numbers, and the authored description is
+   shown apart from it, in italics, as flavour. One convention everywhere: mono
+   rules text, ◆ on an ability firing, serif italics for flavour. */
+function skillRulesText(s){
+  const pw = s.power ? `${s.power}× ${(s.school||'phys')==='mag' ? 'MAG' : 'ATK'}` : '';
+  const parts = [];
+  switch(s.kind){
+    case 'attack': case 'debuffEnemy': parts.push(`${pw} damage to one foe`); break;
+    case 'aoeAttack': parts.push(`${pw} damage to every foe`); break;
+    case 'heal': parts.push(`heals one ally ${s.power}× MAG + 5`); break;
+    case 'healAll': parts.push(`heals every ally ${s.power}× MAG + 5`); break;
+    case 'revive': parts.push('revives a fallen ally at 40% HP'); break;
+    case 'buffParty': if(s.buff) parts.push(`every ally: ${statusShort(s.buff)} for ${turnsText(s.buff.duration)}`); break;
+    case 'taunt':
+      if(s.status) parts.push(`for ${turnsText(s.status.duration)}: draws ${Math.round(TAUNT_REDIRECT_CHANCE*100)}% of single-target attacks onto you, `
+        + `you take ${Math.round((1-TAUNT_DAMAGE_TAKEN)*100)}% less damage, ${statusShort(s.status)}`);
+      break;
+  }
+  if(s.critBonus) parts.push(`+${Math.round(s.critBonus*100)}% crit chance`);
+  if(s.bonusVsFullHp) parts.push(`+${s.bonusVsFullHp}× vs unharmed foes`);
+  if(s.executePct) parts.push(`${s.executePower}× vs foes under ${Math.round(s.executePct*100)}% HP`);
+  const rider = s.statusEffect || s.debuff;
+  if(rider){
+    const ch = rider.chance ?? 1;
+    parts.push(`${ch < 1 ? Math.round(ch*100) + '% chance: ' : ''}${rider.label} (${statusShort(rider)}, ${turnsText(rider.duration)})`
+      + (rider.kind==='stun' ? ', bosses resist' : ''));
+  }
+  if(s.clearsDebuffs) parts.push('removes debuffs, poison and bleeding');
+  if(s.selfDamagePct) parts.push(`costs you ${Math.round(s.selfDamagePct*100)}% of your max HP`);
+  return parts.join(' · ');
+}
+// What one more level of training actually changes — see applySkillUpgrade.
+// The button used to promise "+15% power" on everything, but a skill with no
+// power (a taunt, a ward) gains a turn of duration instead, and Revive brings
+// an ally back at a fixed 40% whatever its power says.
+function upgradeGainText(s){
+  if(s.kind==='revive') return '−1 MP';
+  if(!s.power) return '+1 turn, −1 MP';
+  return '+15% power, −1 MP';
+}
+// The rules line and the flavour line, ready to drop into a card or button.
+function skillTextHtml(s, mpPrefix){
+  const rules = skillRulesText(s);
+  return `<span class="rules">${mpPrefix ? s.mp + ' MP · ' : ''}${rules}</span>`
+       + (s.desc ? `<span class="flavor">${s.desc}</span>` : '');
+}
+// Markup for the combat log and outcome screens.
+function abName(name){ return `<b class="ab">${name}</b>`; }
+function flavorText(t){ return `<i class="fl">${t}</i>`; }
+function effectLineHtml(name, text){ return `<span class="effect">${abName(name)} ${text}</span>`; }
+
 function statusPillHtml(s, withName){
   const m = statusMeta(s);
-  return `<span class="sfx ${m.tone}">${withName ? m.name + ' ' : ''}${m.code}${m.left!=null ? `<b>${m.left}</b>` : ''}</span>`;
+  // Beside its full name a code only earns its place when it adds something:
+  // "Emboldened ATK↑" says which stat, "Poisoned PSN" just says it twice.
+  const word = s.stat ? (STAT_WORD[s.stat] || '') : '';
+  const code = !withName ? m.code
+    : (s.stat && s.kind!=='taunt' && !(word && (m.name||'').indexOf(word) >= 0)) ? m.code : '';
+  const text = withName ? [m.name, code].filter(Boolean).join(' ') : code;
+  return `<span class="sfx ${m.tone}">${text}${m.left!=null ? `<b>${m.left}</b>` : ''}</span>`;
 }
 function statusSentence(s){
   const m = statusMeta(s);
@@ -2039,10 +2145,10 @@ function applyDamage(target, dmg, isDot){
       target.bondSaveUsed = true;
       target.hp = Math.max(1, Math.round(target.maxHp * BOND_SAVE_PCT));
       guarded = true;
-      log(`✦ ${dispName(target)} has come too far with you to stop here — and gets back up.`);
+      log(`${abName('Bond III — Unbreakable')} ${dispName(target)} gets back up at ${target.hp} HP (once a run). ${flavorText('They have come too far with you to stop here.')}`);
     } else if(!target.isEnemy && state.blessing==='guardian' && !state.usedGuardianAngel){
       state.usedGuardianAngel = true; target.hp = 1; guarded = true;
-      log(`✦ A guardian light shields ${dispName(target)} from the killing blow!`);
+      log(`${abName('Guardian Angel')} ${dispName(target)} survives the killing blow at 1 HP (once a journey). ${flavorText('A guardian light shields them.')}`);
     } else {
       target.hp = 0; died = true;
       if(!isDot) log(`${dispName(target)} ${target.isEnemy?'is defeated':'has fallen'}!`);
@@ -2094,7 +2200,10 @@ function dealDamage(attacker, target, action, isAoe){
   if(!target.isEnemy) dmg = Math.min(dmg, damageCapFor(target, isAoe));
   fx({t:'hit', actorId:attacker.id, targetId:target.id, amount:dmg, crit:isCrit});
   applyDamage(target, dmg);
-  log(`${dispName(attacker)} uses ${action.name} on ${dispName(target)} for ${dmg} damage${isCrit?' — critical!':''}.`);
+  // A plain Attack stays plain; anything else is an ability firing — a
+  // player's skill or an enemy's special — and is marked so it reads as one.
+  const what = action.name==='Attack' ? 'Attack' : abName(action.name);
+  log(`${dispName(attacker)} uses ${what} on ${dispName(target)} for ${dmg} damage${isCrit?' — critical!':''}.`);
   // `debuff` is accepted as well as `statusEffect` on purpose: Weaken was
   // authored with the rider under `debuff`, this lookup only read
   // `statusEffect`, and the skill spent six levels dealing 0.4 power damage
@@ -2111,7 +2220,7 @@ function dealDamage(attacker, target, action, isAoe){
     if(rider.kind==='stun' && BOSS_ROLES.includes(target.role)) riderChance *= BOSS_STUN_RESIST;
     if(Math.random() < riderChance){
       applyStatus(target, rider);
-      log(`${dispName(target)} is afflicted with ${rider.label}.`);
+      log(`${dispName(target)} is afflicted with ${rider.label} (${statusShort(rider)}, ${turnsText(rider.duration)}).`);
     }
   }
 }
@@ -2126,14 +2235,14 @@ function healTarget(caster, target, action, silent){
     target.statuses = (target.statuses||[]).filter(s=>s.kind!=='debuff' && s.kind!=='dot');
     if(target.statuses.length !== before) fxStatuses(target);
   }
-  if(!silent) log(`${dispName(caster)} uses ${action.name} on ${dispName(target)}, restoring ${amount} HP.`);
+  if(!silent) log(`${dispName(caster)} uses ${abName(action.name)} on ${dispName(target)}, restoring ${amount} HP.`);
 }
 function reviveTarget(caster, target, action){
   if(!target || target.hp>0) return;
   target.hp = Math.max(1, Math.round(target.maxHp*0.4));
   fx({t:'revive', id:target.id});
   fx({t:'hp', id:target.id, hp:target.hp});
-  log(`${dispName(caster)} uses ${action.name} — ${dispName(target)} returns to the fight!`);
+  log(`${dispName(caster)} uses ${abName(action.name)} — ${dispName(target)} returns to the fight at ${target.hp} HP!`);
 }
 // What an action is aimed at, for the stage to draw it. Resolution itself
 // does not use this; it only tells the effects where to go.
@@ -2152,7 +2261,7 @@ function resolveAction(actor, action, target){
     fx({t:'cast', actorId:actor.id, targetIds:castTargetIds(actor, action, target),
         name:action.name || 'Attack', kind:action.kind, item:action.item});
   }
-  if(action.kind==='defend'){ actor.defending=true; fxStatuses(actor); fx({t:'defend', id:actor.id}); log(`${dispName(actor)} braces for the next attack.`); return; }
+  if(action.kind==='defend'){ actor.defending=true; fxStatuses(actor); fx({t:'defend', id:actor.id}); log(`${dispName(actor)} uses ${abName('Defend')}: half damage until their next turn. ${flavorText('They brace for the next attack.')}`); return; }
   if(action.kind==='item'){ resolveItem(actor, action, target); return; }
   if(action.mp){ actor.mp = Math.max(0, actor.mp - action.mp); fx({t:'mp', id:actor.id, mp:actor.mp}); }
   const c = state.combat;
@@ -2165,10 +2274,12 @@ function resolveAction(actor, action, target){
     }
     case 'heal': healTarget(actor, target, action); break;
     case 'healAll': c.allies.filter(isAlive).forEach(t=>healTarget(actor,t,action,false)); break;
-    case 'buffParty': c.allies.filter(isAlive).forEach(t=>applyStatus(t, action.buff)); log(`${dispName(actor)} uses ${action.name}!`); break;
+    case 'buffParty': c.allies.filter(isAlive).forEach(t=>applyStatus(t, action.buff)); log(`${dispName(actor)} uses ${abName(action.name)}: every ally ${statusShort(action.buff)} for ${turnsText(action.buff.duration)}.`); break;
     case 'taunt':
       applyStatus(actor, action.status);
-      log(`${dispName(actor)} roars a challenge — the enemy's attention swings around.`);
+      // This line used to be the only trace of the skill: it never said
+      // "Taunt", so it read as scenery rather than as an ability firing.
+      log(`${dispName(actor)} uses ${abName(action.name)}: enemies are drawn to them for ${turnsText(action.status.duration)}. ${flavorText('A bellowed challenge — the enemy’s attention swings around.')}`);
       break;
     case 'debuffEnemy': if(target){ dealDamage(actor,target,action); } break;
     case 'revive': reviveTarget(actor, target, action); break;
@@ -2176,7 +2287,7 @@ function resolveAction(actor, action, target){
   if(action.selfDamagePct){
     const recoil = Math.max(1, Math.round(actor.maxHp*action.selfDamagePct));
     applyDamage(actor, recoil, true);
-    log(`${dispName(actor)} strains from the effort, taking ${recoil} damage.`);
+    log(`${dispName(actor)} takes ${recoil} recoil damage. ${flavorText('They strain from the effort.')}`);
   }
   // demon lord phase transition check
   if(target && target.isEnemy && target.role==='demonlord' && target.phase===1 && target.hp <= target.maxHp*0.5 && target.hp>0){
@@ -2192,9 +2303,9 @@ function resolveAction(actor, action, target){
       // not appear before the line announcing them.
       if(state.combat.view) state.combat.view.hidden[sm.id] = true;
     });
-    log(`✦ The Demon Lord’s wounds knit with dark power — it grows more dangerous!`);
+    log(`${abName('Second Form')} The Demon Lord’s attack rises 25%, it acts twice a round, and it gains Despair Wave. ${flavorText('Its wounds knit with dark power.')}`);
     fx({t:'summon', ids:summoned.map(sm=>sm.id)});
-    log(`✦ Two Abyssal Wraiths tear their way out of the dark to defend their master!`);
+    log(`${abName('Summon')} Two Abyssal Wraiths join the fight. ${flavorText('They tear their way out of the dark to defend their master.')}`);
   }
 }
 function resolveItem(actor, action, target){
@@ -2382,15 +2493,19 @@ function buildEvent(kind, tier){
     return {kind, title:'A Forgotten Shrine', text:`Half-swallowed by ${region?region.blurb.toLowerCase():'the wilds'}, a weathered shrine stands quiet. Something in the air asks to be acknowledged.`,
       choices:[
         {label:'Pray at the shrine', resolve(){
-          if(Math.random()<0.6){
-            state.party.forEach(p=>applyEventBuff(p,{key:'blessed',label:'Emboldened',kind:'buff',stat:'atk',mult:1.15,battles:2}));
-            return 'A warmth settles over the party — you feel emboldened for the fights ahead.';
-          } else {
-            state.party.forEach(p=>applyEventBuff(p,{key:'shaken',label:'Shaken',kind:'buff',stat:'atk',mult:0.9,battles:2}));
-            return 'A cold chill runs through you. The shrine was not so welcoming after all.';
-          }
+          // The outcome used to be the flavour line alone, so "you feel
+          // emboldened" could as easily have been mood as an effect. Both are
+          // effects, and now say so — derived from the buff itself.
+          const buff = Math.random()<0.6
+            ? {key:'blessed',label:'Emboldened',kind:'buff',stat:'atk',mult:1.15,battles:2}
+            : {key:'shaken',label:'Shaken',kind:'buff',stat:'atk',mult:0.9,battles:2};
+          state.party.forEach(p=>applyEventBuff(p, buff));
+          const line = effectLineHtml(buff.label, `Every ally: ${statusShort(buff)} for the next ${buff.battles} battles.`);
+          return buff.key==='blessed'
+            ? flavorText('A warmth settles over the party — you feel emboldened for the fights ahead.') + line
+            : flavorText('A cold chill runs through you. The shrine was not so welcoming after all.') + line;
         }},
-        {label:'Leave it undisturbed', resolve(){ return 'You leave the shrine to its silence and move on.'; }}
+        {label:'Leave it undisturbed', resolve(){ return flavorText('You leave the shrine to its silence and move on.'); }}
       ]};
   }
   if(kind==='merchant'){
@@ -2399,9 +2514,10 @@ function buildEvent(kind, tier){
       choices:[
         {label:`Buy a Mystery Elixir (${price}g)`, disabled: state.gold<price, resolve(){
           state.gold -= price; state.inventory.elixir += 1;
-          return 'The merchant hands over a corked vial that hums faintly. An Elixir joins your supplies.';
+          return flavorText('The merchant hands over a corked vial that hums faintly.')
+            + effectLineHtml('+1 Elixir', `${CONSUMABLES.elixir.desc} You now carry ${state.inventory.elixir}.`);
         }},
-        {label:'Decline and walk on', resolve(){ return 'You nod politely and continue on your way.'; }}
+        {label:'Decline and walk on', resolve(){ return flavorText('You nod politely and continue on your way.'); }}
       ]};
   }
   if(kind==='traveler'){
@@ -2414,7 +2530,7 @@ function buildEvent(kind, tier){
           startCombat(enemies, 'event');
           return null;
         }},
-        {label:'Keep moving', resolve(){ return 'You decide the risk isn’t worth it, and press on.'; }}
+        {label:'Keep moving', resolve(){ return flavorText('You decide the risk isn’t worth it, and press on.'); }}
       ]};
   }
   // chest
@@ -2424,15 +2540,18 @@ function buildEvent(kind, tier){
         if(Math.random()<0.7){
           const gold = Math.round((20+randInt(20))*tier);
           state.gold += gold;
-          if(Math.random()<0.4){ state.inventory.potion += 1; return `Inside: ${gold} gold and a Potion.`; }
-          return `Inside: ${gold} gold, nothing more.`;
+          if(Math.random()<0.4){
+            state.inventory.potion += 1;
+            return 'Inside:' + effectLineHtml(`+${gold} gold`, '') + effectLineHtml('+1 Potion', CONSUMABLES.potion.desc);
+          }
+          return 'Inside, nothing more than coin:' + effectLineHtml(`+${gold} gold`, '');
         } else {
           const enemies = [makeEnemy(state.travel.regionId,'brute',tier)];
           startCombat(enemies, 'event');
           return null;
         }
       }},
-      {label:'Leave it be', resolve(){ return 'Some things are better left buried. You walk on.'; }}
+      {label:'Leave it be', resolve(){ return flavorText('Some things are better left buried. You walk on.'); }}
     ]};
 }
 function applyEventBuff(target, def){
@@ -3351,16 +3470,19 @@ function resolveTravelerOrChestFollowup(){
   // asking "is the game at a serialisable moment?" was told no from the
   // first ambush onward.
   state.currentEvent = null;
-  state.eventFollowupText = 'You emerge victorious and recover a little gold for your trouble.';
   const gold = 15 + randInt(15);
   state.gold += gold;
+  state.eventFollowupText = flavorText('You emerge victorious and recover a little gold for your trouble.')
+    + effectLineHtml(`+${gold} gold`, '');
   if(state.pendingEventOutcome && state.pendingEventOutcome.type==='travelerFight' && Math.random()<0.5 && state.party.length<MAX_PARTY){
     const have = state.party.map(p=>p.classId);
     const missing = CLASS_ORDER.filter(c=>!have.includes(c));
     if(missing.length){
       const cls = choice(missing);
       recruit(cls);
-      state.eventFollowupText = `You rescue a grateful ${CLASSES[cls].name}, who asks to join your cause!`;
+      state.eventFollowupText = flavorText(`You rescue a grateful ${CLASSES[cls].name}, who asks to join your cause!`)
+        + effectLineHtml(`${CLASSES[cls].name} joins the party`, '')
+        + effectLineHtml(`+${gold} gold`, '');
     }
   }
   state.pendingEventOutcome = null;
@@ -4120,7 +4242,7 @@ function inspectHtml(){
   if(!c || c.result) return '';
   const unit = c.inspectId ? stageRoster().find(u=>u.id===c.inspectId) : null;
   if(!unit || viewIsHidden(unit)){
-    return '<div class="inspect-hint">Tap anyone on the field to see what is affecting them.</div>';
+    return '<div class="inspect-hint">Tap anyone on the field to see their effects.</div>';
   }
   const hp = viewHp(unit);
   const list = hp>0 ? viewStatuses(unit) : [];
@@ -5057,6 +5179,12 @@ function render(){
     default: body = '<p>...</p>';
   }
   app.innerHTML = `<div class="codex-inner">${body}</div>`;
+  // A freshly built log box starts scrolled to the top, which on a phone hid
+  // the newest lines — the ones that just happened — below its fold.
+  if(state.screen==='combat'){
+    const lg = document.getElementById('combatLog');
+    if(lg) lg.scrollTop = lg.scrollHeight;
+  }
   // The party bar and the battle stage are updated in place, outside this
   // wholesale replacement, so their animations survive a re-render.
   updatePartyBar();
@@ -5142,8 +5270,10 @@ function heroSkillChoiceHtml(c, tier, heading){
     <h2 class="section-title">${heading}</h2>
     <div class="btn-row">
       ${options.map(o=>{
-        const scales = o.skills.map(s=>skillScalingLabel(s)).filter(Boolean).join(', ');
-        return `<button class="btn btn-wide" onclick="heroChooseSkill('${c.id}',${tier},'${o.classId}')"><strong>${o.skills.map(s=>s.name).join(' + ')}</strong><small>${o.className}${scales?' — scales with '+scales:''}<br>${o.skills.map(s=>s.desc).join(' ')}</small></button>`;
+        // Each skill's rules line says what it scales off (1.6× MAG), which is
+        // the thing that matters most when choosing — an ATK-built Hero
+        // holding a magic kit wins far less often than a matched build.
+        return `<button class="btn btn-wide skill-btn" onclick="heroChooseSkill('${c.id}',${tier},'${o.classId}')"><strong>${o.skills.map(s=>s.name).join(' + ')}</strong><small class="opt-class">${o.className}</small>${o.skills.map(s=>`<small class="skill-text">${o.skills.length>1 ? `<span class="rules sub">${s.name}</span>` : ''}${skillTextHtml(s, true)}</small>`).join('')}</button>`;
       }).join('')}
     </div>`;
 }
@@ -5192,7 +5322,8 @@ function renderBlessing(){
   </div>
   <div class="card">
     <div class="card-title">${b.name}</div>
-    <p style="margin-bottom:0">${b.desc}</p>
+    ${b.flavor ? `<p class="flavor-line">${b.flavor}</p>` : ''}
+    <p style="margin-bottom:0">${effectLineHtml(b.name, b.effect)}</p>
   </div>
   <p class="narrative">"This much I can offer," the Goddess says. "The rest, hero, is up to you." The world dissolves into golden light — and reforms around you as a dusty road at the edge of a small town.</p>
   <div class="btn-row"><button class="btn btn-primary btn-wide" onclick="continueFromBlessing()">Begin the journey</button></div>`;
@@ -5317,7 +5448,7 @@ function renderEvent(){
   return `
   <div class="eyebrow">${renderRegionIntroLabel()}</div>
   <h2 class="section-title">${ev.title}</h2>
-  <p>${ev.text}</p>
+  <p class="narrative">${ev.text}</p>
   <div class="btn-row">
     ${ev.choices.map((c,i)=>`<button class="btn btn-wide" ${c.disabled?'disabled':''} onclick="eventChoice(${i})">${c.label}</button>`).join('')}
   </div>`;
@@ -5405,15 +5536,14 @@ function renderCombat(){
     const hasDeadAlly = c.allies.some(a=>a.hp<=0);
     actionPanel = `<div class="actor-banner">${dispName(actor)}’s turn (${actor.hp}/${actor.maxHp} HP, ${actor.mp}/${actor.maxMp} MP)</div>
     <div class="btn-row">
-      <button class="btn skill-btn" onclick="combatChooseAction('basic')">Attack<small>Physical, no MP</small></button>
+      <button class="btn skill-btn" onclick="combatChooseAction('basic')">Attack<small class="rules">No MP · 1× ATK damage to one foe</small></button>
       ${skills.map((s,i)=>{
         const affordable = actor.mp>=s.mp;
         const needsDead = s.target==='singleDeadAlly';
         const disabled = !affordable || (needsDead && !hasDeadAlly);
-        const scale = skillScalingLabel(s);
-        return `<button class="btn skill-btn" ${disabled?'disabled':''} onclick="combatChooseAction('skill', ${i})">${s.name}${s.upgraded?' +'+s.upgraded:''}<small>${s.mp} MP${scale?' — '+scale:''} — ${s.desc}</small></button>`;
+        return `<button class="btn skill-btn" ${disabled?'disabled':''} onclick="combatChooseAction('skill', ${i})">${s.name}${s.upgraded?' +'+s.upgraded:''}<small class="skill-text">${skillTextHtml(s, true)}</small></button>`;
       }).join('')}
-      <button class="btn" onclick="combatChooseAction('defend')">Defend<small>No MP — half damage taken until your next turn</small></button>
+      <button class="btn skill-btn" onclick="combatChooseAction('defend')">Defend<small class="rules">No MP · half damage taken until your next turn</small></button>
       ${Object.keys(CONSUMABLES).filter(k=>state.inventory[k]>0).map(k=>`<button class="btn" onclick="combatChooseItem('${k}')">${CONSUMABLES[k].name} (${state.inventory[k]})<small>${CONSUMABLES[k].desc}</small></button>`).join('')}
     </div>`;
   }
@@ -5731,10 +5861,9 @@ function renderTrainerScreen(){
       const cost = maxed ? null : SKILL_UPGRADE_COST[upLvl];
       return `<div class="shop-item">
         <div><span class="tag">${['heal','healAll','revive','buffParty','taunt'].includes(s.kind)?'support':'combat'}</span>${upLvl?`<span class="tag">+${upLvl} trained</span>`:''}</div>
-        <strong>${s.name}</strong><span>${s.desc}</span>
-        ${skillScalingLabel(s) ? `<span class="tag">${skillScalingLabel(s)}</span>` : ''}
+        <strong>${s.name}</strong><span class="skill-text">${skillTextHtml(s, true)}</span>
         ${maxed ? '<span class="price">Fully trained</span>' :
-          `<span class="price">${cost}g — Upgrade (+15% power, -1 MP)</span>
+          `<span class="price">${cost}g — Upgrade (${upgradeGainText(s)})</span>
            <button class="btn" ${state.gold<cost?'disabled':''} onclick="trainUpgradeSkill('${c.id}','${s.name}')">Train</button>`}
       </div>`;
     }).join('');
@@ -5742,8 +5871,8 @@ function renderTrainerScreen(){
     const lockedRows = lockedSkills.map(s=>{
       const cost = SKILL_UNLOCK_COST[s.level];
       return `<div class="shop-item">
-        <div><span class="tag">unlocks at Lv.${s.level}</span>${skillScalingLabel(s)?`<span class="tag">${skillScalingLabel(s)}</span>`:''}</div>
-        <strong>${s.name}</strong><span>${s.desc}</span>
+        <div><span class="tag">unlocks at Lv.${s.level}</span></div>
+        <strong>${s.name}</strong><span class="skill-text">${skillTextHtml(s, true)}</span>
         <span class="price">${cost}g — learn early</span>
         <button class="btn" ${state.gold<cost?'disabled':''} onclick="trainUnlockSkill('${c.id}','${s.name}')">Train</button>
       </div>`;
@@ -5751,7 +5880,7 @@ function renderTrainerScreen(){
     const bonus = BONUS_SKILLS[c.classId];
     const bonusRow = (!bonus || c.bonusSkillLearned) ? '' : `<div class="shop-item">
         <div><span class="tag">bonus skill</span></div>
-        <strong>${bonus.name}</strong><span>${bonus.desc}</span>
+        <strong>${bonus.name}</strong><span class="skill-text">${skillTextHtml(bonus, true)}</span>
         <span class="price">${BONUS_SKILL_COST}g — never unlocked by leveling</span>
         <button class="btn" ${state.gold<BONUS_SKILL_COST?'disabled':''} onclick="trainLearnBonus('${c.id}')">Train</button>
       </div>`;
@@ -5759,8 +5888,8 @@ function renderTrainerScreen(){
       const cost = SKILL_UNLOCK_COST[tier];
       const reached = c.level >= tier;
       return `<div class="shop-item">
-        <div><span class="tag">Lv.${tier} — ${option.className}${reached?'':' (early)'}</span>${option.skills.map(s=>skillScalingLabel(s)).filter(Boolean).map(l=>`<span class="tag">${l}</span>`).join('')}</div>
-        <strong>${option.skills.map(s=>s.name).join(' + ')}</strong><span>${option.skills.map(s=>s.desc).join(' ')}</span>
+        <div><span class="tag">Lv.${tier} — ${option.className}${reached?'':' (early)'}</span></div>
+        <strong>${option.skills.map(s=>s.name).join(' + ')}</strong>${option.skills.map(s=>`<span class="skill-text">${option.skills.length>1 ? `<span class="rules sub">${s.name}</span>` : ''}${skillTextHtml(s, true)}</span>`).join('')}
         <span class="price">${cost}g</span>
         <button class="btn" ${state.gold<cost?'disabled':''} onclick="heroLearnExtraSkill('${c.id}',${tier},'${option.classId}')">Train</button>
       </div>`;
@@ -5785,6 +5914,7 @@ function renderTrainerScreen(){
   <div class="eyebrow">The Trainer</div>
   <h2 class="section-title">Sharpen Your Craft</h2>
   <p>Gold buys skill, not just steel — train a skill early, push a known move further, or learn something the road alone won’t teach.</p>
+  <p class="text-key"><span class="rules">Rules text</span> is exactly what a skill does. <span class="flavor">Italic text is flavor.</span></p>
   ${cards}
   <div class="btn-row"><button class="btn btn-primary btn-wide" onclick="state.screen='town'; render();">Back to town</button></div>`;
 }
