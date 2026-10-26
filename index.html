@@ -3089,7 +3089,12 @@ function combatChooseAction(kind, payload){
   if(!actor || c.playing) return;
   let action;
   if(kind==='basic') action = {name:'Attack', kind:'attack', school:'phys', power:1.0, mp:0, target:'singleEnemy'};
-  else if(kind==='defend') action = {name:'Defend', kind:'defend', mp:0};
+  // Defend needs no target, and has to SAY so. Without `target:'self'` it fell
+  // through to the target picker below, which asked for "a target above" while
+  // marking nothing on the field as clickable — every press of Defend was a
+  // dead end that only Back could get out of. The bot never defends, so the
+  // simulator could not have caught it.
+  else if(kind==='defend') action = {name:'Defend', kind:'defend', mp:0, target:'self'};
   else if(kind==='skill') action = getCharacterSkills(actor)[payload];
   if(!action) return;
   if(action.target==='allEnemies' || action.target==='allAllies' || action.target==='self'){
@@ -4523,6 +4528,14 @@ function applyFx(ev){
     case 'healed': stageFloater(ev.targetId, '+' + ev.amount, 'heal'); break;
     case 'status': stageFloater(ev.id, ev.label, 'status'); break;
     case 'stun': stageFloater(ev.id, ev.label, 'status'); break;
+    case 'defend': {
+      // Defend used to resolve without a mark on the field, so even when it
+      // worked there was nothing to say it had.
+      stageFloater(ev.id, 'Defending', 'status');
+      const b = vfxBox(ev.id);
+      if(b && vfxStage() && vfxStage().animate) vfxRing(b.x, b.y, Math.round(b.w * 0.38), '#d6dee8', 420, 0);
+      break;
+    }
     case 'guardian': stageFloater(ev.id, 'shielded!', 'heal'); break;
     case 'revive': stageUnitState(ev.id, 'idle'); stageFloater(ev.id, 'revived!', 'heal'); break;
     case 'death': {
@@ -5145,7 +5158,7 @@ function renderCombat(){
         const scale = skillScalingLabel(s);
         return `<button class="btn skill-btn" ${disabled?'disabled':''} onclick="combatChooseAction('skill', ${i})">${s.name}${s.upgraded?' +'+s.upgraded:''}<small>${s.mp} MP${scale?' — '+scale:''} — ${s.desc}</small></button>`;
       }).join('')}
-      <button class="btn" onclick="combatChooseAction('defend')">Defend<small>Halve incoming damage</small></button>
+      <button class="btn" onclick="combatChooseAction('defend')">Defend<small>No MP — half damage taken until your next turn</small></button>
       ${Object.keys(CONSUMABLES).filter(k=>state.inventory[k]>0).map(k=>`<button class="btn" onclick="combatChooseItem('${k}')">${CONSUMABLES[k].name} (${state.inventory[k]})<small>${CONSUMABLES[k].desc}</small></button>`).join('')}
     </div>`;
   }
