@@ -372,9 +372,10 @@ p{ line-height:1.6; margin:0 0 0.9rem; color:var(--ink-soft); }
    they sit in the headroom every frame leaves above a figure. */
 .unit-fx{
   position:absolute; left:-4px; right:-4px; top:0; transform:translateY(-55%);
-  display:flex; flex-wrap:wrap; justify-content:center; gap:2px;
+  display:flex; flex-wrap:nowrap; justify-content:center; gap:2px;
   pointer-events:none; z-index:2;
 }
+.sfx.more{ background:#3d3a4a; }
 .unit.gone .unit-fx{ display:none; }
 .sfx{
   display:inline-flex; align-items:center; gap:2px;
@@ -2098,6 +2099,17 @@ function abName(name){ return `<b class="ab">${name}</b>`; }
 function flavorText(t){ return `<i class="fl">${t}</i>`; }
 function effectLineHtml(name, text){ return `<span class="effect">${abName(name)} ${text}</span>`; }
 
+// Which badges win the limited room above a sprite: losing a turn first, then
+// what decides where blows land, then damage over time, then stat changes.
+function statusRank(s){
+  if(s.kind==='stun') return 0;
+  if(s.kind==='taunt') return 1;
+  if(s.kind==='defend') return 2;
+  if(s.kind==='dot') return 3;
+  if(s.stat && (s.mult||1) < 1) return 4;
+  if(s.kind==='eventBuff') return 6;
+  return 5;
+}
 function statusPillHtml(s, withName){
   const m = statusMeta(s);
   // Beside its full name a code only earns its place when it adds something:
@@ -4164,6 +4176,7 @@ function updateBattleStage(){
   }
 
   const choice = state.pendingActionChoice;
+  const scale = vfxScale();      // sizes the status-badge budget below
   const banner = document.getElementById('stageBanner');
   if(banner){
     // Always non-empty, so the rows below never shift as the text changes.
@@ -4190,9 +4203,20 @@ function updateBattleStage(){
     const fxRow = node.querySelector('.unit-fx');
     if(fxRow){
       const list = hp>0 ? viewStatuses(unit) : [];
-      const fxKey = list.map(s=>s.key + ':' + (s.kind==='eventBuff' ? s.battlesLeft : s.duration)).join(',');
+      const fxKey = list.map(s=>s.key + ':' + (s.kind==='eventBuff' ? s.battlesLeft : s.duration)).join(',') + '|' + scale;
       if(fxRow.dataset.key !== fxKey){
-        fxRow.innerHTML = list.map(s=>statusPillHtml(s)).join('');
+        // One row, never more: a second row climbed into the turn banner above
+        // the foes, and a party member can carry six effects at once (Taunt,
+        // three different wards, a shrine's blessing, Guard). The most
+        // decision-relevant go first; the rest collapse into "+N", and the
+        // inspect card always has the full list.
+        const box = (unit.role==='demonlord' ? 128 : unitIsBig(unit) ? 96 : 64) * scale;
+        const cap = box < 90 ? 2 : box < 150 ? 3 : box < 220 ? 4 : 5;
+        const sorted = list.slice().sort((a,b)=>statusRank(a) - statusRank(b));
+        const shown = sorted.length > cap ? sorted.slice(0, cap - 1) : sorted;
+        const more = sorted.length - shown.length;
+        fxRow.innerHTML = shown.map(s=>statusPillHtml(s)).join('')
+          + (more ? `<span class="sfx more">+${more}</span>` : '');
         fxRow.dataset.key = fxKey;
         // Hover text for a mouse; a tap opens the inspect card instead.
         node.title = list.length ? unit.name + ' — ' + list.map(statusSentence).join('; ') : '';
@@ -4245,7 +4269,7 @@ function inspectHtml(){
     return '<div class="inspect-hint">Tap anyone on the field to see their effects.</div>';
   }
   const hp = viewHp(unit);
-  const list = hp>0 ? viewStatuses(unit) : [];
+  const list = hp>0 ? viewStatuses(unit).slice().sort((x,y)=>statusRank(x) - statusRank(y)) : [];
   const rows = list.length
     ? list.map(s=>{
         const m = statusMeta(s);
@@ -4394,7 +4418,7 @@ function updatePartyBar(){
     const fxRow = chip.querySelector('.chip-fx');
     if(fxRow){
       const inFight = !!(state.combat && state.screen==='combat');
-      const list = (inFight || hp<=0) ? [] : viewStatuses(p);
+      const list = (inFight || hp<=0) ? [] : viewStatuses(p).slice().sort((x,y)=>statusRank(x) - statusRank(y));
       const fxKey = list.map(s=>s.key + ':' + (s.kind==='eventBuff' ? s.battlesLeft : s.duration)).join(',');
       if(fxRow.dataset.key !== fxKey){
         fxRow.innerHTML = list.map(s=>statusPillHtml(s, true)).join('');
