@@ -3,7 +3,7 @@
    with no network at all. A new deploy changes this file (the version below is
    a hash of every file), the browser notices on the next online launch,
    installs the new set alongside the old one, and switches over. */
-const VERSION = '3880ebe46fef';
+const VERSION = '229d78c9e259';
 const CACHE = 'veilfall-' + VERSION;
 const PRECACHE = [
   "./",
