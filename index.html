@@ -1912,6 +1912,9 @@ function startCombat(enemies, context){
     timeline:[], view:null, playing:false, timer:null
   };
   state.party.forEach(p=>{ p.defending=false; });
+  // Also cleared when a fight is won; this catches anything that ended a
+  // fight some other way.
+  clearFightOnlyStatuses(state.party);
   state.battlesFought = (state.battlesFought||0) + 1;
   state.lastCombatContext = context;
   bestiarySee(enemies.map(bestiaryKeyFor));
@@ -2124,10 +2127,24 @@ function statusSentence(s){
   const m = statusMeta(s);
   return `${m.name}: ${m.effect}${m.leftText ? ' (' + m.leftText + ')' : ''}`;
 }
+// Effects that belong to the fight they were used in. Nothing used to clear
+// combat statuses when a battle ended — only the inn did — so a Taunt with
+// turns left walked into the next fight still pulling blows. Damage over time
+// (Bleeding) is deliberately NOT here: a wound you carry off the field is
+// allowed to keep hurting. Add a kind to this list to make it end with the
+// fight too.
+const FIGHT_ONLY_STATUS_KINDS = ['taunt'];
+function clearFightOnlyStatuses(units){
+  (units||[]).forEach(u=>{
+    const before = (u.statuses||[]).length;
+    u.statuses = (u.statuses||[]).filter(s=>FIGHT_ONLY_STATUS_KINDS.indexOf(s.kind) < 0);
+    if(u.statuses.length !== before) fxStatuses(u);
+  });
+}
 function checkCombatEnd(){
   const c = state.combat;
   if(c.enemies.every(e=>e.hp<=0)){
-    if(!c.result){ c.result='win'; awardRewards(); bestiarySlay(c.enemies.map(bestiaryKeyFor)); deepenBonds(); }
+    if(!c.result){ c.result='win'; awardRewards(); bestiarySlay(c.enemies.map(bestiaryKeyFor)); deepenBonds(); clearFightOnlyStatuses(state.party); }
     return true;
   }
   if(c.allies.every(a=>a.hp<=0)){ c.result='lose'; return true; }
@@ -2999,7 +3016,9 @@ function deserializeCharacter(d){
   }
   c.manualStatsEnabled = !!d.manual;
   if(d.manualFrom!==undefined && d.manualFrom!==null) c.manualModeFrozenAtLevel = d.manualFrom;
-  c.statuses = (d.statuses||[]).map(st=>Object.assign({}, st));
+  // A save is only ever written between fights, so any fight-only effect in
+  // one is a leftover from before they were cleared at the end of a battle.
+  c.statuses = (d.statuses||[]).filter(st=>st && FIGHT_ONLY_STATUS_KINDS.indexOf(st.kind) < 0).map(st=>Object.assign({}, st));
   c.battlesTogether = d.together || 0;
   c.isLead = !!d.lead;
   c.defending = false;
