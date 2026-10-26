@@ -335,6 +335,58 @@ p{ line-height:1.6; margin:0 0 0.9rem; color:var(--ink-soft); }
   .unit.targetable .unit-sprite::after{ animation:none; border-color:rgba(224,182,84,1); }
 }
 .unit.acting .unit-sprite{ transform:translateY(-8px) scale(1.05); filter:brightness(1.25); }
+/* ---------- status badges ----------
+   Pinned over the top edge of the sprite box rather than placed in the flow:
+   the rows are bottom-aligned, so a badge row that took up space would bob
+   every sprite in the row up and down as effects landed and wore off. Up here
+   they sit in the headroom every frame leaves above a figure. */
+.unit-fx{
+  position:absolute; left:-4px; right:-4px; top:0; transform:translateY(-55%);
+  display:flex; flex-wrap:wrap; justify-content:center; gap:2px;
+  pointer-events:none; z-index:2;
+}
+.unit.gone .unit-fx{ display:none; }
+.sfx{
+  display:inline-flex; align-items:center; gap:2px;
+  font-family:var(--font-mono); font-size:0.56rem; font-weight:700; letter-spacing:0.02em; line-height:1.1;
+  padding:1px 3px; border-radius:2px; white-space:nowrap;
+  color:#fff7ea; background:#9b3a24; border:1px solid rgba(0,0,0,0.6);
+  box-shadow:0 1px 2px rgba(0,0,0,0.55);
+}
+.sfx b{ font-weight:700; background:rgba(0,0,0,0.32); border-radius:1px; padding:0 2px; margin-right:-2px; }
+/* Hue says good or bad at a glance; the arrow and the code say it in words,
+   so nothing here rests on colour alone. */
+.sfx.bad{ background:#9b3a24; }
+.sfx.psn{ background:#6a3c8c; }
+.sfx.bld{ background:#7d1b2b; }
+.sfx.stun{ background:#2d6390; }
+.sfx.good{ background:#3a7436; }
+.sfx.taunt{ background:#9c6f17; }
+.sfx.guard{ background:#4f5e72; }
+@media(max-width:700px){ .sfx{ font-size:0.5rem; padding:1px 2px; } }
+/* The unit being read in the inspect card. */
+.unit.inspected .unit-sprite::before{
+  content:''; position:absolute; inset:-4px; pointer-events:none;
+  border:1px dashed rgba(239,230,209,0.8); border-radius:3px;
+}
+.inspect:empty{ display:none; }
+.inspect-hint{ font-family:var(--font-mono); font-size:0.66rem; letter-spacing:0.03em; color:var(--ink-soft); opacity:0.85; }
+.inspect-card{
+  border:1px solid var(--parchment-edge); border-left:3px solid var(--gold); background:rgba(255,255,255,0.32);
+  border-radius:3px; padding:0.45rem 0.7rem 0.5rem; font-size:0.84rem; line-height:1.45;
+}
+.inspect-head{ display:flex; align-items:baseline; gap:0.55rem; font-family:var(--font-display); font-size:0.98rem; margin-bottom:0.15rem; }
+.inspect-hp{ font-family:var(--font-mono); font-size:0.7rem; color:var(--ink-soft); }
+.inspect-x{
+  margin-left:auto; background:none; border:none; cursor:pointer; color:var(--ink-soft);
+  font-size:1.15rem; line-height:1; padding:0 0.15rem;
+}
+.inspect-row{ display:flex; gap:0.5rem; align-items:baseline; padding:0.22rem 0; border-top:1px dotted var(--parchment-edge); color:var(--ink); }
+.inspect-row .sfx{ flex:0 0 auto; font-size:0.62rem; position:relative; top:-1px; }
+.inspect-row em{ font-style:normal; font-family:var(--font-mono); font-size:0.7rem; color:var(--ink-soft); white-space:nowrap; }
+.inspect-none{ color:var(--ink-soft); font-style:italic; font-size:0.82rem; }
+.chip-fx{ display:flex; flex-wrap:wrap; gap:3px; }
+.chip-fx:not(:empty){ margin-top:4px; }
 /* Screen shake. Two weights: a small one for a critical hit, a heavy one for
    the two moments in a run that deserve it — the Demon Lord changing, and the
    Demon Lord falling. Applied to the stage rather than the page so the text
@@ -1818,6 +1870,7 @@ function beginRound(){
   fx({t:'round', n:c.round-1});
 }
 function tickStatusesStartOfTurn(actor){
+  const hadAny = actor.defending || (actor.statuses||[]).length > 0;
   actor.defending = false;
   let skip = false;
   const remaining = [];
@@ -1839,13 +1892,85 @@ function tickStatusesStartOfTurn(actor){
     if(s.duration>0) remaining.push(s);
   });
   actor.statuses = remaining;
+  if(hadAny) fxStatuses(actor);
   return skip;
 }
 function applyStatus(target, statusDef){
   if(!target || target.hp<=0) return;
   target.statuses = (target.statuses||[]).filter(s=>s.key!==statusDef.key);
   target.statuses.push({key:statusDef.key, label:statusDef.label, kind:statusDef.kind, stat:statusDef.stat, mult:statusDef.mult, dmgPct:statusDef.dmgPct, duration:statusDef.duration});
+  // The badge lands in the same beat as the callout announcing it.
+  fxStatuses(target);
   fx({t:'status', id:target.id, label:statusDef.label});
+}
+
+/* ---------- reading statuses ----------
+   Everything the player is told about a status is derived here from the
+   status's own numbers — the badge on the field, the inspect card, the hover
+   text — so a label cannot drift from what the effect actually does.
+
+   Defending is not stored as a status (it is a flag, cleared at the start of
+   the defender's next turn), but it is SHOWN as one, because to the player it
+   is one. */
+const STAT_ABBR = {atk:'ATK', def:'DEF', mag:'MAG', spd:'SPD'};
+const STAT_WORD = {atk:'Attack', def:'Defense', mag:'Magic', spd:'Speed'};
+const STATUS_CODES = {poison:'PSN', bleed:'BLD', frozen:'FRZ', stun:'STN'};
+// A copy, not the live objects: the turn tick decrements durations in place,
+// and playback needs to show what was true at each beat, not at the end.
+function statusSnapshot(unit){
+  const list = (unit.statuses||[]).map(s=>({key:s.key, label:s.label, kind:s.kind, stat:s.stat,
+    mult:s.mult, dmgPct:s.dmgPct, duration:s.duration, battlesLeft:s.battlesLeft}));
+  // The flag can outlive the fight it was raised in (it is only cleared at the
+  // defender's next turn, or when the next fight starts), so outside a fight
+  // it means nothing and is not shown.
+  if(unit.defending && state.combat) list.push({key:'defending', label:'Defending', kind:'defend'});
+  return list;
+}
+// Records a unit's statuses as a beat, so the field shows them changing when
+// the thing that changed them plays — not the moment the turn was resolved.
+function fxStatuses(unit){
+  if(unit) fx({t:'st', id:unit.id, list:statusSnapshot(unit)});
+}
+function statusMeta(s){
+  const pct = m => Math.round(Math.abs(1 - (m||1)) * 100);
+  let tone = 'bad', code, effect;
+  if(s.kind==='defend'){
+    tone = 'guard'; code = 'GUARD';
+    effect = 'takes half damage until their next turn';
+  } else if(s.kind==='taunt'){
+    tone = 'taunt'; code = 'TAUNT';
+    effect = `pulls ${Math.round(TAUNT_REDIRECT_CHANCE*100)}% of single-target attacks onto them, `
+           + `takes ${pct(TAUNT_DAMAGE_TAKEN)}% less damage`
+           + (s.stat ? `, ${STAT_WORD[s.stat]} +${pct(s.mult)}%` : '');
+  } else if(s.kind==='dot'){
+    tone = s.key==='bleed' ? 'bld' : 'psn';
+    code = STATUS_CODES[s.key] || s.label.slice(0,3).toUpperCase();
+    effect = `loses ${Math.round((s.dmgPct||0)*100)}% of max HP at the start of each turn`;
+  } else if(s.kind==='stun'){
+    tone = 'stun'; code = STATUS_CODES[s.key] || 'STN';
+    effect = 'loses their next turn';
+  } else if(s.stat){
+    const up = (s.mult||1) >= 1;
+    tone = up ? 'good' : 'bad';
+    code = (STAT_ABBR[s.stat] || s.stat.toUpperCase()) + (up ? '↑' : '↓');
+    effect = `${STAT_WORD[s.stat] || s.stat} ${up ? '+' : '−'}${pct(s.mult)}%`;
+  } else {
+    code = (s.label||'?').slice(0,4).toUpperCase(); effect = s.label || '';
+  }
+  // Shrine blessings are counted in battles; everything else in the holder's
+  // own turns, ticking down as each of those turns begins.
+  const battles = s.kind==='eventBuff';
+  const left = s.kind==='defend' ? null : battles ? s.battlesLeft : s.duration;
+  const leftText = left==null ? '' : `${left} ${battles ? (left===1?'battle':'battles') : (left===1?'turn':'turns')} left`;
+  return {tone, code, name:s.label, effect, left, leftText};
+}
+function statusPillHtml(s, withName){
+  const m = statusMeta(s);
+  return `<span class="sfx ${m.tone}">${withName ? m.name + ' ' : ''}${m.code}${m.left!=null ? `<b>${m.left}</b>` : ''}</span>`;
+}
+function statusSentence(s){
+  const m = statusMeta(s);
+  return `${m.name}: ${m.effect}${m.leftText ? ' (' + m.leftText + ')' : ''}`;
 }
 function checkCombatEnd(){
   const c = state.combat;
@@ -1962,7 +2087,11 @@ function healTarget(caster, target, action, silent){
   target.hp = Math.min(target.maxHp, target.hp+amount);
   fx({t:'healed', targetId:target.id, amount});
   fx({t:'hp', id:target.id, hp:target.hp});
-  if(action.clearsDebuffs) target.statuses = (target.statuses||[]).filter(s=>s.kind!=='debuff' && s.kind!=='dot');
+  if(action.clearsDebuffs){
+    const before = (target.statuses||[]).length;
+    target.statuses = (target.statuses||[]).filter(s=>s.kind!=='debuff' && s.kind!=='dot');
+    if(target.statuses.length !== before) fxStatuses(target);
+  }
   if(!silent) log(`${dispName(caster)} uses ${action.name} on ${dispName(target)}, restoring ${amount} HP.`);
 }
 function reviveTarget(caster, target, action){
@@ -1989,7 +2118,7 @@ function resolveAction(actor, action, target){
     fx({t:'cast', actorId:actor.id, targetIds:castTargetIds(actor, action, target),
         name:action.name || 'Attack', kind:action.kind, item:action.item});
   }
-  if(action.kind==='defend'){ actor.defending=true; fx({t:'defend', id:actor.id}); log(`${dispName(actor)} braces for the next attack.`); return; }
+  if(action.kind==='defend'){ actor.defending=true; fxStatuses(actor); fx({t:'defend', id:actor.id}); log(`${dispName(actor)} braces for the next attack.`); return; }
   if(action.kind==='item'){ resolveItem(actor, action, target); return; }
   if(action.mp){ actor.mp = Math.max(0, actor.mp - action.mp); fx({t:'mp', id:actor.id, mp:actor.mp}); }
   const c = state.combat;
@@ -2081,7 +2210,7 @@ function runCombatLoop(){
     if(!c.roundTick) c.roundTick = new Map();
     let skip;
     if(c.roundTick.has(actor.id)){
-      actor.defending = false;
+      if(actor.defending){ actor.defending = false; fxStatuses(actor); }
       skip = c.roundTick.get(actor.id);
     } else {
       skip = tickStatusesStartOfTurn(actor);
@@ -3716,6 +3845,12 @@ function viewMp(unit){
   if(c && c.view && Object.prototype.hasOwnProperty.call(c.view.mp, unit.id)) return c.view.mp[unit.id];
   return unit.mp;
 }
+// Statuses as the player should currently see them — see fxStatuses().
+function viewStatuses(unit){
+  const c = state.combat;
+  if(c && c.view && c.view.st && Object.prototype.hasOwnProperty.call(c.view.st, unit.id)) return c.view.st[unit.id];
+  return statusSnapshot(unit);
+}
 function viewIsHidden(unit){
   const c = state.combat;
   return !!(c && c.view && c.view.hidden[unit.id]);
@@ -3785,6 +3920,7 @@ function stageUnitHtml(unit){
   const hpNums = unit.isEnemy ? `<div class="unit-name">${viewHp(unit)}/${unit.maxHp}</div>` : '';
   const size = unit.role==='demonlord' ? 'titan' : unitIsBig(unit) ? 'boss' : '';
   return `<div class="unit ${size} ${sprite?'drawn':''}" data-id="${unit.id}" onclick="stageUnitClicked('${unit.id}')">
+    <div class="unit-fx"></div>
     <div class="unit-sprite ${cls}" style="${style}">${sprite?'':unitInitial(unit)}</div>
     <div class="unit-bar"><i style="width:100%"></i></div>
     <div class="unit-name">${unit.name}</div>
@@ -3883,6 +4019,20 @@ function updateBattleStage(){
     }
     node.classList.toggle('gone', hp<=0);
     node.classList.toggle('acting', !c.playing && c.pendingActor===unit);
+    node.classList.toggle('inspected', c.inspectId===unit.id);
+    // Status badges. Rebuilt only when what they say changes, since this runs
+    // on every beat of playback.
+    const fxRow = node.querySelector('.unit-fx');
+    if(fxRow){
+      const list = hp>0 ? viewStatuses(unit) : [];
+      const fxKey = list.map(s=>s.key + ':' + (s.kind==='eventBuff' ? s.battlesLeft : s.duration)).join(',');
+      if(fxRow.dataset.key !== fxKey){
+        fxRow.innerHTML = list.map(s=>statusPillHtml(s)).join('');
+        fxRow.dataset.key = fxKey;
+        // Hover text for a mouse; a tap opens the inspect card instead.
+        node.title = list.length ? unit.name + ' — ' + list.map(statusSentence).join('; ') : '';
+      }
+    }
     let targetable = false;
     if(choice && !c.playing){
       if(choice.target==='singleEnemy') targetable = unit.isEnemy && hp>0;
@@ -3894,14 +4044,58 @@ function updateBattleStage(){
 }
 function stageUnitClicked(id){
   const c = state.combat;
-  if(!c || c.playing) return;
-  const choice = state.pendingActionChoice;
-  if(!choice) return;
+  if(!c) return;
   const unit = stageRoster().find(u=>u.id===id);
   if(!unit) return;
-  if(choice.target==='singleEnemy' && unit.isEnemy && unit.hp>0) combatChooseTarget(id);
-  else if(choice.target==='singleAlly' && !unit.isEnemy && unit.hp>0) combatChooseTarget(id);
-  else if(choice.target==='singleDeadAlly' && !unit.isEnemy && unit.hp<=0) combatChooseTarget(id);
+  const choice = state.pendingActionChoice;
+  if(choice){
+    // Picking a target: a tap means "this one", never "tell me about it".
+    if(c.playing) return;
+    if(choice.target==='singleEnemy' && unit.isEnemy && unit.hp>0) combatChooseTarget(id);
+    else if(choice.target==='singleAlly' && !unit.isEnemy && unit.hp>0) combatChooseTarget(id);
+    else if(choice.target==='singleDeadAlly' && !unit.isEnemy && unit.hp<=0) combatChooseTarget(id);
+    return;
+  }
+  // Otherwise a tap reads the unit: what is on it and for how long. Allowed
+  // during playback too — watching a poison tick down is the point.
+  c.inspectId = c.inspectId===id ? null : id;
+  updateInspectPanel();
+  updateBattleStage();
+}
+function closeInspect(){
+  const c = state.combat;
+  if(!c) return;
+  c.inspectId = null;
+  updateInspectPanel();
+  updateBattleStage();
+}
+// The card under the field that spells out a unit's effects in words. Lives in
+// #app, so render() rebuilds it from state; between renders, playback refreshes
+// it beat by beat alongside the log.
+function inspectHtml(){
+  const c = state.combat;
+  if(!c || c.result) return '';
+  const unit = c.inspectId ? stageRoster().find(u=>u.id===c.inspectId) : null;
+  if(!unit || viewIsHidden(unit)){
+    return '<div class="inspect-hint">Tap anyone on the field to see what is affecting them.</div>';
+  }
+  const hp = viewHp(unit);
+  const list = hp>0 ? viewStatuses(unit) : [];
+  const rows = list.length
+    ? list.map(s=>{
+        const m = statusMeta(s);
+        return `<div class="inspect-row">${statusPillHtml(s)}<span><strong>${m.name}</strong> — ${m.effect}${m.leftText ? ` <em>· ${m.leftText}</em>` : ''}</span></div>`;
+      }).join('')
+    : `<div class="inspect-none">${hp>0 ? 'Nothing is affecting them right now.' : (unit.isEnemy ? 'Defeated.' : 'Fallen.')}</div>`;
+  return `<div class="inspect-card">
+    <div class="inspect-head"><span>${unit.name}</span><span class="inspect-hp">${Math.max(0,hp)}/${unit.maxHp} HP</span>
+      <button class="inspect-x" onclick="closeInspect()" aria-label="Close">×</button></div>
+    ${rows}</div>`;
+}
+function updateInspectPanel(){
+  if(!HAS_DOM) return;
+  const el = document.getElementById('inspectPanel');
+  if(el) el.innerHTML = inspectHtml();
 }
 function stageFloater(unitId, text, cls){
   if(!HAS_DOM) return;
@@ -4028,6 +4222,21 @@ function updatePartyBar(){
     if(nums[1]) nums[1].textContent = mp + '/' + p.maxMp + ' MP';
     const lvl = chip.querySelectorAll('.chip-name span')[1];
     if(lvl) lvl.textContent = 'Lv.' + p.level;
+    // Effects that outlast a fight — a shrine's blessing or its chill — had no
+    // home anywhere on screen between battles. In a fight the badges on the
+    // field carry this, and a row here that grew and shrank as statuses came
+    // and went would shove the whole battle down the page mid-turn.
+    const fxRow = chip.querySelector('.chip-fx');
+    if(fxRow){
+      const inFight = !!(state.combat && state.screen==='combat');
+      const list = (inFight || hp<=0) ? [] : viewStatuses(p);
+      const fxKey = list.map(s=>s.key + ':' + (s.kind==='eventBuff' ? s.battlesLeft : s.duration)).join(',');
+      if(fxRow.dataset.key !== fxKey){
+        fxRow.innerHTML = list.map(s=>statusPillHtml(s, true)).join('');
+        fxRow.title = list.map(statusSentence).join('; ');
+        fxRow.dataset.key = fxKey;
+      }
+    }
   });
   const gold = el.querySelector('.gold-line');
   if(gold) gold.textContent = '⟡ ' + state.gold + ' gold';
@@ -4047,7 +4256,7 @@ const COMBAT_SPEEDS = [
 const FX_WEIGHT = {
   round:0.75, turn:0.3, hit:1, dot:0.9, healed:0.9, status:0.5, defend:0.5,
   stun:0.8, death:1.2, revive:1.3, phase:1.6, summon:1.6, guardian:1.3,
-  log:0.5, hp:0, mp:0
+  log:0.5, hp:0, mp:0, st:0
 };
 function combatSpeedKey(){
   return (state && state.combatSpeed) || defaultCombatSpeed();
@@ -4075,8 +4284,8 @@ function beginTurnBatch(){
   const c = state.combat;
   if(!c) return;
   c.timeline = [];
-  c.view = {hp:{}, mp:{}, hidden:{}, logShown:c.log.length};
-  c.enemies.concat(c.allies).forEach(u=>{ c.view.hp[u.id]=u.hp; c.view.mp[u.id]=u.mp; });
+  c.view = {hp:{}, mp:{}, st:{}, hidden:{}, logShown:c.log.length};
+  c.enemies.concat(c.allies).forEach(u=>{ c.view.hp[u.id]=u.hp; c.view.mp[u.id]=u.mp; c.view.st[u.id]=statusSnapshot(u); });
 }
 function presentTimeline(){
   const c = state.combat;
@@ -4108,6 +4317,7 @@ function stepTimeline(){
   updateBattleStage();
   updatePartyBar();
   updateCombatLog();
+  updateInspectPanel();
   c.timer = setTimeout(stepTimeline, Math.max(16, delay));
 }
 // Dropping the view is all that "finish immediately" needs to mean: the real
@@ -4509,6 +4719,7 @@ function applyFx(ev){
     case 'log': c.view.logShown = Math.min(c.log.length, c.view.logShown + 1); break;
     case 'hp': c.view.hp[ev.id] = ev.hp; break;
     case 'mp': c.view.mp[ev.id] = ev.mp; break;
+    case 'st': if(c.view.st) c.view.st[ev.id] = ev.list; break;
     case 'summon': (ev.ids||[]).forEach(id=>{ delete c.view.hidden[id]; }); break;
     case 'hit':
       // The swing was already played by the cast beat. An area attack lands
@@ -4762,6 +4973,7 @@ function renderPartyBar(){
         ${statBar(p.hp,p.maxHp,'hp')}
         ${statBar(p.mp,p.maxMp,'mp')}
         <div class="chip-nums"><span>${p.hp}/${p.maxHp} HP</span><span>${p.mp}/${p.maxMp} MP</span></div>
+        <div class="chip-fx"></div>
       </div>
     </div>`).join('');
   return `<div class="partybar">${chips}</div><div class="gold-line">⟡ ${state.gold} gold</div>`;
@@ -5166,6 +5378,7 @@ function renderCombat(){
   return `
   <div class="eyebrow">${renderRegionIntroLabel()} — Round ${c.round-1}</div>
   <div class="combat-grid">
+    <div id="inspectPanel" class="inspect">${inspectHtml()}</div>
     <div class="log" id="combatLog">${viewLogLines().slice(-10).map(l=>`<div>${l}</div>`).join('')}</div>
     ${actionPanel}
   </div>
