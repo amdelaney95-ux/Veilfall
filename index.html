@@ -191,6 +191,15 @@ p{ line-height:1.6; margin:0 0 0.9rem; color:var(--ink-soft); }
   display:flex; flex-direction:column; gap:0.3rem;
 }
 .shop-item .price{ font-family:var(--font-mono); color:var(--gold); font-weight:700; font-size:0.8rem; }
+/* A receipt, not a single number: the list price, what the old piece fetches,
+   and what actually leaves your purse. */
+.price-lines{ font-family:var(--font-mono); font-size:0.74rem; color:var(--ink-soft); margin:0.1rem 0 0.15rem; }
+.price-line{ display:flex; justify-content:space-between; gap:0.6rem; padding:0.06rem 0; }
+.price-line span:first-child{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.price-line span:last-child{ flex:0 0 auto; }
+.price-line.credit{ color:var(--moss); font-weight:700; }
+.price-line.total{ color:var(--gold); font-weight:700; border-top:1px dotted var(--parchment-edge); margin-top:0.12rem; padding-top:0.18rem; }
+.shop-note{ font-size:0.88rem; margin-bottom:0.6rem; }
 
 .stepper-row{ display:flex; gap:0.5rem; align-items:center; }
 .stepper-btn{
@@ -1275,6 +1284,31 @@ const EQUIP = {
       {name:'Sunforged Blade',tier:1,price:30,atk:2,mag:2},{name:'Starlit Falchion',tier:2,price:70,atk:4,mag:4},{name:'Ascendant Blade',tier:3,price:140,atk:7,mag:7}],
     armor:[{name:'Wayfarer’s Mail',tier:1,price:30,def:3,hp:5,mp:3},{name:'Voyager’s Plate',tier:2,price:70,def:6,hp:9,mp:6},{name:'Sovereign’s Aegis',tier:3,price:140,def:9,hp:15,mp:10}] }
 };
+
+// Trade-ins. Buying a piece of gear hands the one it replaces back to the
+// outfitter for GEAR_TRADE_IN gold, and every piece is listed at its `price`
+// PLUS that same amount — so what an upgrade actually costs you is exactly
+// `price`, the same as before trade-ins existed. Balance is untouched by
+// construction; the change is that an upgrade no longer reads as throwing the
+// old piece away.
+//
+// Flat rather than scaled to what the old piece is worth, deliberately. A
+// credit of, say, half the old piece's price cannot keep every upgrade at its
+// old cost: hold tier 1->2 and tier 2->3 steady and the jump straight from
+// tier 1 to tier 3 — common at the last town, for whoever missed out at the
+// second — comes out ~25 gold dearer. One flat credit keeps every path exact.
+//
+// `price` keeps its old meaning everywhere else: a dropped piece you already
+// out-class still sells for its `price`, not the inflated list price.
+const GEAR_TRADE_IN = 30;
+function gearListPrice(item){ return item.price + GEAR_TRADE_IN; }
+function shopSlotItem(entry){
+  const owner = state.party.find(p=>p.id===entry.ownerId);
+  if(!owner) return null;
+  return entry.slot==='weapon' ? owner.weapon : owner.armor;
+}
+function shopTradeIn(entry){ return shopSlotItem(entry) ? GEAR_TRADE_IN : 0; }
+function shopNetCost(entry){ return gearListPrice(entry.item) - shopTradeIn(entry); }
 
 const CONSUMABLES = {
   potion:{name:'Potion',price:15,desc:'Restores 35 HP.'},
@@ -3360,7 +3394,10 @@ function continueAfterEventFollowup(){
 }
 function buyShopItem(idx){
   const entry = state.townShop[idx];
-  if(!entry || state.gold < entry.item.price) return;
+  // Affordability is judged on what you actually hand over — the trade-in is
+  // settled at the counter — so anything you could afford before trade-ins
+  // existed, you can still afford.
+  if(!entry || state.gold < shopNetCost(entry)) return;
   const owner = state.party.find(p=>p.id===entry.ownerId);
   // The listing can go stale between being generated and being clicked: the
   // owner may have left the party, or may already have equal-or-better gear
@@ -3370,7 +3407,13 @@ function buyShopItem(idx){
   if(!owner){ state.townShop.splice(idx,1); render(); return; }
   const current = entry.slot==='weapon' ? owner.weapon : owner.armor;
   if(current && current.tier >= entry.item.tier){ state.townShop.splice(idx,1); render(); return; }
-  state.gold -= entry.item.price;
+  const list = gearListPrice(entry.item), credit = shopTradeIn(entry);
+  state.gold -= list - credit;
+  // Said out loud after the fact as well as on the card before it: getting
+  // something back is the whole point, so the player should see it happen.
+  state.shopNotice = `${owner.name} takes the <strong>${entry.item.name}</strong> (${list}g)`
+    + (current && credit ? ` and trades in the ${current.name} for <strong>${credit}g</strong> back` : '')
+    + ` — ${list - credit}g spent.`;
   if(entry.slot==='weapon') owner.weapon = entry.item; else owner.armor = entry.item;
   recalcDerived(owner);
   // Clear every remaining listing for this character and slot that the new
@@ -5408,7 +5451,7 @@ function renderTown(){
       </div>
     </div>` : ''}
   <div class="btn-row">
-    <button class="btn" onclick="state.screen='shop'; render();">Visit the Outfitter</button>
+    <button class="btn" onclick="openShop()">Visit the Outfitter</button>
     <button class="btn" onclick="state.screen='trainer'; render();">Seek a Trainer</button>
     <button class="btn" onclick="state.screen='guild'; render();">Visit the Guild</button>
     <button class="btn" onclick="state.screen='partyStats'; render();">Party Stats</button>
@@ -5491,11 +5534,15 @@ function renderVictory(){
   </div>`;
 }
 
+function openShop(){ state.shopNotice = null; state.screen = 'shop'; render(); }
+function leaveShop(){ state.shopNotice = null; state.screen = 'town'; render(); }
 function renderShopScreen(){
   const items = state.townShop;
   return `
   <div class="eyebrow">The Outfitter</div>
   <h2 class="section-title">Wares</h2>
+  <p class="shop-note">Buy an upgrade and the outfitter takes the piece it replaces in trade: <strong>${GEAR_TRADE_IN}g back</strong> on every weapon and armor.</p>
+  ${state.shopNotice ? `<div class="notice">${state.shopNotice}</div>` : ''}
   ${items.length===0?'<p>Nothing left to buy here.</p>':`
   <div class="shop-grid">
     ${items.map((entry,i)=>{
@@ -5513,12 +5560,17 @@ function renderShopScreen(){
         }
         return `+${v} ${k.toUpperCase()}`;
       }).join(', ');
+      const list = gearListPrice(entry.item), credit = shopTradeIn(entry), net = list - credit;
       return `<div class="shop-item">
         <div><span class="tag">${owner.name}</span><span class="tag">${entry.slot}</span></div>
         <strong>${entry.item.name}</strong>
         <span>${stats}</span>
-        <span class="price">${entry.item.price}g</span>
-        <button class="btn" ${state.gold<entry.item.price?'disabled':''} onclick="buyShopItem(${i})">Buy</button>
+        <div class="price-lines">
+          <div class="price-line"><span>Price</span><span>${list}g</span></div>
+          ${credit ? `<div class="price-line credit"><span>Trade in ${current.name}</span><span>−${credit}g</span></div>` : ''}
+          <div class="price-line total"><span>You pay</span><span>${net}g</span></div>
+        </div>
+        <button class="btn" ${state.gold<net?'disabled':''} onclick="buyShopItem(${i})">Buy — ${net}g</button>
       </div>`;
     }).join('')}
   </div>`}
@@ -5532,7 +5584,7 @@ function renderShopScreen(){
         <button class="btn" ${state.gold<item.price?'disabled':''} onclick="buyConsumable('${k}')">Buy (have ${state.inventory[k]})</button>
       </div>`).join('')}
   </div>
-  <div class="btn-row"><button class="btn btn-primary btn-wide" onclick="state.screen='town'; render();">Back to town</button></div>`;
+  <div class="btn-row"><button class="btn btn-primary btn-wide" onclick="leaveShop()">Back to town</button></div>`;
 }
 function buyConsumable(key){
   const item = CONSUMABLES[key];
