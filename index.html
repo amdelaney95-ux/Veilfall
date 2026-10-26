@@ -2127,17 +2127,21 @@ function statusSentence(s){
   const m = statusMeta(s);
   return `${m.name}: ${m.effect}${m.leftText ? ' (' + m.leftText + ')' : ''}`;
 }
-// Effects that belong to the fight they were used in. Nothing used to clear
-// combat statuses when a battle ended — only the inn did — so a Taunt with
-// turns left walked into the next fight still pulling blows. Damage over time
-// (Bleeding) is deliberately NOT here: a wound you carry off the field is
-// allowed to keep hurting. Add a kind to this list to make it end with the
-// fight too.
-const FIGHT_ONLY_STATUS_KINDS = ['taunt'];
+// What outlasts a fight. Nothing used to clear combat statuses when a battle
+// ended — only the inn did — so a Taunt with turns left walked into the next
+// fight still pulling blows, a ward kept guarding, a curse kept weakening, and
+// a character stunned as the last enemy fell lost the first turn of the next
+// fight. Everything now ends with the fight it was used in EXCEPT:
+//   dot        — Bleeding: a wound you carry off the field keeps hurting.
+//   eventBuff  — a shrine's blessing or chill, counted in battles by design.
+// Named as the exceptions on purpose, so any new kind of effect ends with the
+// fight unless someone decides otherwise.
+const CARRY_OVER_STATUS_KINDS = ['dot', 'eventBuff'];
+function carriesOver(s){ return !!s && CARRY_OVER_STATUS_KINDS.indexOf(s.kind) >= 0; }
 function clearFightOnlyStatuses(units){
   (units||[]).forEach(u=>{
     const before = (u.statuses||[]).length;
-    u.statuses = (u.statuses||[]).filter(s=>FIGHT_ONLY_STATUS_KINDS.indexOf(s.kind) < 0);
+    u.statuses = (u.statuses||[]).filter(carriesOver);
     if(u.statuses.length !== before) fxStatuses(u);
   });
 }
@@ -3016,9 +3020,9 @@ function deserializeCharacter(d){
   }
   c.manualStatsEnabled = !!d.manual;
   if(d.manualFrom!==undefined && d.manualFrom!==null) c.manualModeFrozenAtLevel = d.manualFrom;
-  // A save is only ever written between fights, so any fight-only effect in
-  // one is a leftover from before they were cleared at the end of a battle.
-  c.statuses = (d.statuses||[]).filter(st=>st && FIGHT_ONLY_STATUS_KINDS.indexOf(st.kind) < 0).map(st=>Object.assign({}, st));
+  // A save is only ever written between fights, so anything in one that does
+  // not carry over is a leftover from before effects ended with the fight.
+  c.statuses = (d.statuses||[]).filter(carriesOver).map(st=>Object.assign({}, st));
   c.battlesTogether = d.together || 0;
   c.isLead = !!d.lead;
   c.defending = false;
@@ -4292,7 +4296,10 @@ function inspectHtml(){
   const rows = list.length
     ? list.map(s=>{
         const m = statusMeta(s);
-        return `<div class="inspect-row">${statusPillHtml(s)}<span><strong>${m.name}</strong> — ${m.effect}${m.leftText ? ` <em>· ${m.leftText}</em>` : ''}</span></div>`;
+        // Almost everything ends with the fight; the one combat effect that
+        // does not should say so, on the side it can follow home.
+        const lasts = !unit.isEnemy && s.kind==='dot' ? ' <em>· lasts into the next fight</em>' : '';
+        return `<div class="inspect-row">${statusPillHtml(s)}<span><strong>${m.name}</strong> — ${m.effect}${m.leftText ? ` <em>· ${m.leftText}</em>` : ''}${lasts}</span></div>`;
       }).join('')
     : `<div class="inspect-none">${hp>0 ? 'Nothing is affecting them right now.' : (unit.isEnemy ? 'Defeated.' : 'Fallen.')}</div>`;
   return `<div class="inspect-card">
